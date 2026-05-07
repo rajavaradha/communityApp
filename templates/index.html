@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOM Creator</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { padding: 10px 20px; margin: 5px; }
+        .remove-btn { color: red; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>MOM Creator</h1>
+    <form id="momForm" method="POST" enctype="multipart/form-data">
+        <label>Date: <input type="date" name="date" required></label><br><br>
+        <label>Time: <input type="time" name="time" required></label><br><br>
+
+        <h2>Members Present</h2>
+        <table id="attendeesTable">
+            <thead>
+                <tr>
+                    <th>S.No</th>
+                    <th>Name</th>
+                    <th>Designation / Role</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="sno">1</td>
+                    <td><input type="text" name="attendee_name[]" placeholder="Name"></td>
+                    <td><input type="text" name="attendee_role[]" placeholder="Role"></td>
+                    <td><span class="remove-btn" onclick="removeAttendeeRow(this)">Remove</span></td>
+                </tr>
+            </tbody>
+        </table>
+        <button type="button" onclick="addAttendee()">Add Member</button><br><br>
+
+        <h2>Points Discussed</h2>
+        <textarea name="points" rows="10" placeholder="Enter points discussed"></textarea><br><br>
+
+        <h2>Action Items</h2>
+        <table id="actionsTable">
+            <thead>
+                <tr>
+                    <th>Action Item</th>
+                    <th>Responsibility</th>
+                    <th>Timeline</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><input type="text" name="action_desc[]" placeholder="Action Item"></td>
+                    <td><input type="text" name="action_resp[]" placeholder="Responsibility"></td>
+                    <td><input type="text" name="action_date[]" placeholder="Timeline"></td>
+                    <td><span class="remove-btn" onclick="removeActionRow(this)">Remove</span></td>
+                </tr>
+            </tbody>
+        </table>
+        <button type="button" onclick="addAction()">Add Action Item</button><br><br>
+
+        <h2>Signatures</h2>
+        <p><em>Agreed and acknowledged by the members present:</em></p>
+        <div id="signaturesDiv"></div>
+        <button type="button" onclick="generateSignatures()">Generate Signature Fields</button><br><br>
+
+        <button type="submit" name="export_word" value="1">Export to Word</button>
+        <button type="submit" name="export_pdf" value="1">Export to PDF</button>
+    </form>
+
+    <script>
+        function addAttendee() {
+            const table = document.getElementById('attendeesTable').getElementsByTagName('tbody')[0];
+            const rowCount = table.rows.length + 1;
+            const row = table.insertRow();
+            row.innerHTML = `
+                <td class="sno">${rowCount}</td>
+                <td><input type="text" name="attendee_name[]" placeholder="Name"></td>
+                <td><input type="text" name="attendee_role[]" placeholder="Role"></td>
+                <td><span class="remove-btn" onclick="removeAttendeeRow(this)">Remove</span></td>
+            `;
+            updateAttendeeNumbers();
+        }
+
+        function removeAttendeeRow(btn) {
+            const row = btn.parentNode.parentNode;
+            row.parentNode.removeChild(row);
+            updateAttendeeNumbers();
+        }
+
+        function updateAttendeeNumbers() {
+            const table = document.getElementById('attendeesTable').getElementsByTagName('tbody')[0];
+            const rows = table.rows;
+            for (let i = 0; i < rows.length; i++) {
+                rows[i].cells[0].textContent = i + 1;
+            }
+        }
+
+        function addAction() {
+            const table = document.getElementById('actionsTable').getElementsByTagName('tbody')[0];
+            const row = table.insertRow();
+            row.innerHTML = `
+                <td><input type="text" name="action_desc[]" placeholder="Action Item"></td>
+                <td><input type="text" name="action_resp[]" placeholder="Responsibility"></td>
+                <td><input type="text" name="action_date[]" placeholder="Timeline"></td>
+                <td><span class="remove-btn" onclick="removeActionRow(this)">Remove</span></td>
+            `;
+        }
+
+        function removeActionRow(btn) {
+            const row = btn.parentNode.parentNode;
+            row.parentNode.removeChild(row);
+        }
+
+        function generateSignatures() {
+            const attendeesTable = document.getElementById('attendeesTable').getElementsByTagName('tbody')[0];
+            const rows = attendeesTable.rows;
+            let sigHtml = '<table style="width:100%; border-collapse:collapse;">';
+            
+            for (let i = 0; i < rows.length; i++) {
+                const name = rows[i].cells[1].querySelector('input').value || `Member ${i+1}`;
+                const role = rows[i].cells[2].querySelector('input').value || '';
+                
+                if (i % 2 === 0) {
+                    sigHtml += '<tr>';
+                }
+                
+                sigHtml += `
+                    <td style="width:50%; padding:20px; text-align:center; border:1px solid #ddd; vertical-align:bottom;">
+                        <div style="border-bottom:1px solid #000; height:40px; margin-bottom:5px;"></div>
+                        <strong>${name}</strong><br>
+                        <small>${role}</small>
+                    </td>
+                `;
+                
+                if (i % 2 === 1 || i === rows.length - 1) {
+                    if (i % 2 === 0) {
+                        sigHtml += '<td style="width:50%; padding:20px; border:1px solid #ddd;"></td>';
+                    }
+                    sigHtml += '</tr>';
+                }
+            }
+            sigHtml += '</table>';
+            document.getElementById('signaturesDiv').innerHTML = sigHtml;
+        }
+    </script>
+</body>
+</html>
