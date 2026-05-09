@@ -1,13 +1,14 @@
-from flask import Flask, render_template, request, send_file
-import os
+import io
 from datetime import datetime
+from flask import Flask, jsonify, render_template, request, send_file
 from docx import Document
 from docx.shared import Pt
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
 from fpdf import FPDF
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 
 def format_date_for_export(date_str):
     if not date_str:
@@ -17,248 +18,311 @@ def format_date_for_export(date_str):
     except ValueError:
         return date_str
 
-@app.route('/', methods=['GET', 'POST'])
+
+def build_export_filename(date_str, time_str, extension):
+    now = datetime.now()
+    date_part = now.strftime('%d%m%Y')
+    time_part = now.strftime('%H%M')
+
+    if date_str:
+        try:
+            date_part = datetime.strptime(date_str, '%Y-%m-%d').strftime('%d%m%Y')
+        except ValueError:
+            pass
+
+    if time_str:
+        try:
+            time_part = datetime.strptime(time_str, '%H:%M').strftime('%H%M')
+        except ValueError:
+            pass
+
+    return f'mom_{date_part}_{time_part}.{extension}'
+
+
+def build_word_bytes(date, time, subject, attendees, points, action_items):
+    doc = Document()
+    valid_action_items = [item for item in action_items if item.get('desc', '').strip()]
+
+    normal_style = doc.styles['Normal']
+    normal_style.font.name = 'Verdana'
+    normal_style.font.size = Pt(10)
+    normal_style.paragraph_format.space_after = Pt(6)
+
+    title = doc.add_paragraph()
+    run = title.add_run('Minutes of Meeting')
+    run.font.name = 'Verdana'
+    run.font.size = Pt(11)
+    run.font.bold = True
+
+    if subject:
+        subject_para = doc.add_paragraph()
+        subject_run = subject_para.add_run(f'Subject: {subject}')
+        subject_run.font.name = 'Verdana'
+        subject_run.font.size = Pt(11)
+        subject_run.font.bold = True
+
+    doc.add_paragraph(f'Date: {format_date_for_export(date)}')
+    doc.add_paragraph(f'Time: {time}')
+    doc.add_paragraph()
+
+    heading = doc.add_paragraph()
+    h_run = heading.add_run('Members Present')
+    h_run.font.name = 'Verdana'
+    h_run.font.size = Pt(11)
+    h_run.bold = True
+    heading.paragraph_format.space_before = Pt(14)
+    heading.paragraph_format.space_after = Pt(8)
+
+    table = doc.add_table(rows=1, cols=3)
+    table.style = 'Table Grid'
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'S.No'
+    hdr_cells[1].text = 'Name'
+    hdr_cells[2].text = 'Designation / Role'
+    for cell in hdr_cells:
+        shading = parse_xml(r'<w:shd {} w:fill="D9EAF7"/>'.format(nsdecls('w')))
+        cell._tc.get_or_add_tcPr().append(shading)
+
+    sno = 1
+    for attendee in attendees:
+        name = attendee.get('name', '').strip()
+        role = attendee.get('role', '').strip()
+        if not name:
+            continue
+        row_cells = table.add_row().cells
+        row_cells[0].text = str(sno)
+        row_cells[1].text = name
+        row_cells[2].text = role
+        sno += 1
+    doc.add_paragraph()
+
+    heading = doc.add_paragraph()
+    h_run = heading.add_run('Points Discussed')
+    h_run.font.name = 'Verdana'
+    h_run.font.size = Pt(11)
+    h_run.bold = True
+    heading.paragraph_format.space_before = Pt(14)
+    heading.paragraph_format.space_after = Pt(8)
+    points_para = doc.add_paragraph(points if points else '')
+    points_para.paragraph_format.space_after = Pt(8)
+
+    if valid_action_items:
+        heading = doc.add_paragraph()
+        h_run = heading.add_run('Action Items')
+        h_run.font.name = 'Verdana'
+        h_run.font.size = Pt(11)
+        h_run.bold = True
+        heading.paragraph_format.space_before = Pt(14)
+        heading.paragraph_format.space_after = Pt(8)
+
+        action_table = doc.add_table(rows=1, cols=3)
+        action_table.style = 'Table Grid'
+        action_hdr = action_table.rows[0].cells
+        action_hdr[0].text = 'Action Item'
+        action_hdr[1].text = 'Responsibility'
+        action_hdr[2].text = 'Timeline'
+        for cell in action_hdr:
+            shading = parse_xml(r'<w:shd {} w:fill="D9EAF7"/>'.format(nsdecls('w')))
+            cell._tc.get_or_add_tcPr().append(shading)
+
+        for item in valid_action_items:
+            desc = item.get('desc', '').strip()
+            action_row = action_table.add_row().cells
+            action_row[0].text = desc
+            action_row[1].text = item.get('resp', '').strip()
+            action_row[2].text = item.get('date', '').strip()
+        doc.add_paragraph()
+
+    heading = doc.add_paragraph()
+    h_run = heading.add_run('Signatures')
+    h_run.font.name = 'Verdana'
+    h_run.font.size = Pt(11)
+    h_run.bold = True
+    heading.paragraph_format.space_before = Pt(14)
+    heading.paragraph_format.space_after = Pt(8)
+    para = doc.add_paragraph('Agreed and acknowledged by the members present:')
+    para.runs[0].italic = True
+
+    sig_table = doc.add_table(rows=1, cols=2)
+    sig_table.autofit = False
+    sig_table.allow_autofit = False
+
+    written = 0
+    for attendee in attendees:
+        name = attendee.get('name', '').strip()
+        role = attendee.get('role', '').strip()
+        if not name:
+            continue
+        if written % 2 == 0:
+            row = sig_table.rows[0] if written == 0 else sig_table.add_row()
+        else:
+            row = sig_table.rows[-1]
+        cell = row.cells[written % 2]
+        p = cell.paragraphs[0]
+        p.alignment = 1
+        r = p.add_run('_' * 20 + '\n' + name + ('\n' + role if role else ''))
+        r.font.name = 'Verdana'
+        r.font.size = Pt(10)
+        written += 1
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
+def build_pdf_bytes(date, time, subject, attendees, points, action_items):
+    pdf = FPDF()
+    valid_action_items = [item for item in action_items if item.get('desc', '').strip()]
+    valid_attendees = [a for a in attendees if a.get('name', '').strip()]
+    font_family = 'Arial'
+    try:
+        pdf.add_font('Verdana', '', 'C:/Windows/Fonts/verdana.ttf', uni=True)
+        pdf.add_font('Verdana', 'B', 'C:/Windows/Fonts/verdanab.ttf', uni=True)
+        pdf.add_font('Verdana', 'I', 'C:/Windows/Fonts/verdanai.ttf', uni=True)
+        font_family = 'Verdana'
+    except Exception:
+        font_family = 'Arial'
+
+    pdf.add_page()
+    pdf.set_font(font_family, 'B', 11)
+    pdf.cell(0, 10, txt='Minutes of Meeting', ln=True, align='C')
+    if subject:
+        pdf.multi_cell(0, 6, txt=f'Subject: {subject}', align='C')
+    pdf.set_font(font_family, '', 10)
+    pdf.ln(3)
+    pdf.cell(0, 8, txt=f'Date: {format_date_for_export(date)}', ln=True)
+    pdf.cell(0, 8, txt=f'Time: {time}', ln=True)
+    pdf.ln(4)
+
+    pdf.set_font(font_family, 'B', 11)
+    pdf.cell(0, 8, txt='Members Present:', ln=True)
+    pdf.set_font(font_family, '', 10)
+    widths = [15, 80, 95]
+    pdf.set_fill_color(217, 234, 247)
+    pdf.cell(widths[0], 7, 'S.No', border=1, align='C', fill=True)
+    pdf.cell(widths[1], 7, 'Name', border=1, align='C', fill=True)
+    pdf.cell(widths[2], 7, 'Designation / Role', border=1, align='C', ln=True, fill=True)
+
+    sno = 1
+    for attendee in attendees:
+        name = attendee.get('name', '').strip()
+        role = attendee.get('role', '').strip()
+        if not name:
+            continue
+        pdf.cell(widths[0], 7, str(sno), border=1, align='C')
+        pdf.cell(widths[1], 7, name[:30], border=1)
+        pdf.cell(widths[2], 7, role[:35], border=1, ln=True)
+        sno += 1
+    pdf.ln(4)
+
+    pdf.set_font(font_family, 'B', 11)
+    pdf.cell(0, 8, txt='Points Discussed:', ln=True)
+    pdf.set_font(font_family, '', 10)
+    pdf.multi_cell(0, 5, points if points else '')
+    pdf.ln(4)
+
+    if valid_action_items:
+        pdf.set_font(font_family, 'B', 11)
+        pdf.cell(0, 8, txt='Action Items:', ln=True)
+        pdf.set_font(font_family, '', 10)
+        aw = [65, 65, 40]
+        pdf.set_fill_color(217, 234, 247)
+        pdf.cell(aw[0], 7, 'Action Item', border=1, align='C', fill=True)
+        pdf.cell(aw[1], 7, 'Responsibility', border=1, align='C', fill=True)
+        pdf.cell(aw[2], 7, 'Timeline', border=1, align='C', ln=True, fill=True)
+        for item in valid_action_items:
+            desc = item.get('desc', '').strip()
+            pdf.cell(aw[0], 7, desc[:35], border=1)
+            pdf.cell(aw[1], 7, item.get('resp', '').strip()[:30], border=1)
+            pdf.cell(aw[2], 7, item.get('date', '').strip()[:18], border=1, ln=True)
+        pdf.ln(4)
+
+    # Signatures section
+    pdf.set_font(font_family, 'B', 11)
+    pdf.cell(0, 8, txt='Signatures:', ln=True)
+    pdf.set_font(font_family, 'I', 10)
+    pdf.cell(0, 6, txt='Agreed and acknowledged by the members present:', ln=True)
+    pdf.ln(3)
+    pdf.set_font(font_family, '', 10)
+
+    sig_per_row = 2
+    sig_width = 90
+    sig_x_start = 15
+    sig_y = pdf.get_y()
+    written = 0
+
+    for attendee in valid_attendees:
+        col_idx = written % sig_per_row
+        row_idx = written // sig_per_row
+        x_pos = sig_x_start + (col_idx * sig_width)
+        y_pos = sig_y + (row_idx * 24)
+
+        pdf.set_xy(x_pos, y_pos)
+        pdf.cell(sig_width, 2, '_' * 30, border=0, align='C')
+        pdf.set_xy(x_pos, y_pos + 3)
+        pdf.cell(sig_width, 5, attendee.get('name', '').strip(), border=0, align='C')
+        pdf.set_xy(x_pos, y_pos + 8)
+        pdf.cell(sig_width, 4, attendee.get('role', '').strip(), border=0, align='C')
+        written += 1
+
+    out = pdf.output(dest='S').encode('latin-1')
+    return io.BytesIO(out)
+
+
+@app.route('/', methods=['GET'])
 def index():
-    if request.method == 'POST':
-        date = request.form.get('date')
-        time = request.form.get('time')
-        attendees_names = request.form.getlist('attendee_name[]')
-        attendees_roles = request.form.getlist('attendee_role[]')
-        points = request.form.get('points')
-        action_descs = request.form.getlist('action_desc[]')
-        action_dates = request.form.getlist('action_date[]')
-        action_resps = request.form.getlist('action_resp[]')
-        formatted_date = format_date_for_export(date)
-
-        if 'export_word' in request.form:
-            action_items = [(desc, resp, adate) for desc, resp, adate in zip(action_descs, action_resps, action_dates) if desc.strip()]
-            
-            doc = Document()
-            
-            # Set default font for the document
-            style = doc.styles['Normal']
-            style.font.name = 'Verdana'
-            style.font.size = Pt(10)
-            
-            title_style = doc.styles.add_style('CustomTitle', 1)
-            title_style.font.name = 'Verdana'
-            title_style.font.size = Pt(11)
-            title_style.font.bold = True
-            
-            heading_style = doc.styles.add_style('CustomHeading', 1)
-            heading_style.font.name = 'Verdana'
-            heading_style.font.size = Pt(11)
-            heading_style.font.bold = True
-            
-            doc.add_heading('Minutes of Meeting', 0).style = title_style
-            doc.add_paragraph(f"Date: {formatted_date}")
-            doc.add_paragraph(f"Time: {time}")
-            
-            # Members Present Table
-            doc.add_heading('Members Present', level=1).style = heading_style
-            table = doc.add_table(rows=1, cols=3)
-            table.style = 'Light Grid Accent 1'
-            hdr_cells = table.rows[0].cells
-            hdr_cells[0].text = 'S.No'
-            hdr_cells[1].text = 'Name'
-            hdr_cells[2].text = 'Designation / Role'
-            
-            sno = 1
-            for name, role in zip(attendees_names, attendees_roles):
-                if name.strip():
-                    row_cells = table.add_row().cells
-                    row_cells[0].text = str(sno)
-                    row_cells[1].text = name
-                    row_cells[2].text = role
-                    sno += 1
-            
-            # Points Discussed
-            doc.add_heading('Points Discussed', level=1).style = heading_style
-            doc.add_paragraph(points if points else "")
-            
-            if action_items:
-                # Action Items Table
-                doc.add_heading('Action Items', level=1).style = heading_style
-                action_table = doc.add_table(rows=1, cols=3)
-                action_table.style = 'Light Grid Accent 1'
-                action_hdr = action_table.rows[0].cells
-                action_hdr[0].text = 'Action Item'
-                action_hdr[1].text = 'Responsibility'
-                action_hdr[2].text = 'Timeline'
-                
-                for desc, resp, adate in action_items:
-                    action_row = action_table.add_row().cells
-                    action_row[0].text = desc
-                    action_row[1].text = resp
-                    action_row[2].text = adate
-            
-            # Signatures
-            doc.add_heading('Signatures', level=1).style = heading_style
-            para = doc.add_paragraph()
-            run = para.add_run('Agreed and acknowledged by the members present:')
-            run.font.name = 'Verdana'
-            run.font.size = Pt(10)
-            run.italic = True
-            doc.add_paragraph()
-            
-            sig_table = doc.add_table(rows=1, cols=2)
-            sig_table.autofit = False
-            sig_table.allow_autofit = False
-            
-            sno = 1
-            for name, role in zip(attendees_names, attendees_roles):
-                if name.strip():
-                    if sno % 2 == 1:
-                        if sno > 1:
-                            sig_row = sig_table.add_row()
-                        else:
-                            sig_row = sig_table.rows[0]
-                    else:
-                        sig_row = sig_table.rows[-1]
-                    
-                    cell_idx = (sno - 1) % 2
-                    sig_para = sig_row.cells[cell_idx].paragraphs[0]
-                    sig_para.alignment = 1  # Center
-                    sig_run = sig_para.add_run('_' * 20 + '\n' + name + '\n' + role)
-                    sig_run.font.name = 'Verdana'
-                    sig_run.font.size = Pt(10)
-                    sno += 1
-            
-            filename = os.path.join(app.config['UPLOAD_FOLDER'], 'mom.docx')
-            doc.save(filename)
-            return send_file(filename, as_attachment=True, download_name='mom.docx')
-
-        elif 'export_pdf' in request.form:
-            action_items = [(desc, resp, date_timeline) for desc, resp, date_timeline in zip(action_descs, action_resps, action_dates) if desc.strip()]
-
-            pdf = FPDF()
-            # Add Verdana font if available
-            try:
-                pdf.add_font('Verdana', '', 'C:/Windows/Fonts/verdana.ttf', uni=True)
-                pdf.add_font('Verdana', 'B', 'C:/Windows/Fonts/verdanab.ttf', uni=True)
-                pdf.add_font('Verdana', 'I', 'C:/Windows/Fonts/verdanai.ttf', uni=True)
-                font_family = 'Verdana'
-            except:
-                font_family = 'Arial'  # Fallback to Arial if Verdana not available
-            
-            pdf.add_page()
-            pdf.set_font(font_family, 'B', size=11)
-            pdf.cell(0, 10, txt="Minutes of Meeting", ln=True, align='C')
-            pdf.set_font(font_family, size=10)
-            pdf.ln(5)
-            pdf.cell(0, 8, txt=f"Date: {formatted_date}", ln=True)
-            pdf.cell(0, 8, txt=f"Time: {time}", ln=True)
-            pdf.ln(5)
-            
-            # Members Present Table
-            pdf.set_font(font_family, 'B', size=11)
-            pdf.cell(0, 8, txt="Members Present:", ln=True)
-            pdf.set_font(font_family, size=10)
-            
-            col_widths = [15, 80, 95]
-            pdf.cell(col_widths[0], 7, "S.No", border=1, align='C')
-            pdf.cell(col_widths[1], 7, "Name", border=1, align='C')
-            pdf.cell(col_widths[2], 7, "Designation / Role", border=1, align='C', ln=True)
-            
-            sno = 1
-            for name, role in zip(attendees_names, attendees_roles):
-                if name.strip():
-                    pdf.cell(col_widths[0], 7, str(sno), border=1, align='C')
-                    pdf.cell(col_widths[1], 7, name[:30], border=1)
-                    pdf.cell(col_widths[2], 7, role[:35], border=1, ln=True)
-                    sno += 1
-            pdf.ln(5)
-            
-            # Points Discussed
-            pdf.set_font(font_family, 'B', size=11)
-            pdf.cell(0, 8, txt="Points Discussed:", ln=True)
-            pdf.set_font(font_family, size=10)
-            pdf.multi_cell(0, 5, points if points else "")
-            pdf.ln(5)
-            
-            if action_items:
-                # Action Items Table
-                pdf.set_font(font_family, 'B', size=11)
-                pdf.cell(0, 8, txt="Action Items:", ln=True)
-                pdf.set_font(font_family, size=10)
-                
-                action_col_widths = [65, 65, 40]
-                pdf.cell(action_col_widths[0], 7, "Action Item", border=1, align='C')
-                pdf.cell(action_col_widths[1], 7, "Responsibility", border=1, align='C')
-                pdf.cell(action_col_widths[2], 7, "Timeline", border=1, align='C', ln=True)
-                
-                for desc, resp, date_timeline in action_items:
-                    # Calculate row height based on text length
-                    max_desc_lines = max(1, len(desc) // 45 + 1)
-                    max_resp_lines = max(1, len(resp) // 35 + 1)
-                    max_lines = max(max_desc_lines, max_resp_lines, 1)
-                    row_height = max(max_lines * 4, 8)
-                    
-                    # Store current position to create multi-column cells
-                    x_pos = pdf.get_x()
-                    y_pos = pdf.get_y()
-                    
-                    # Action Item column (wrapping)
-                    pdf.set_xy(x_pos, y_pos)
-                    pdf.set_draw_color(200, 200, 200)
-                    pdf.rect(x_pos, y_pos, action_col_widths[0], row_height, 'D')
-                    pdf.set_xy(x_pos + 1, y_pos + 1)
-                    pdf.set_draw_color(0, 0, 0)
-                    pdf.multi_cell(action_col_widths[0] - 2, 3.5, desc)
-                    
-                    # Responsibility column
-                    pdf.set_xy(x_pos + action_col_widths[0], y_pos)
-                    pdf.rect(x_pos + action_col_widths[0], y_pos, action_col_widths[1], row_height, 'D')
-                    pdf.set_xy(x_pos + action_col_widths[0] + 1, y_pos + 1)
-                    pdf.multi_cell(action_col_widths[1] - 2, 3.5, resp)
-                    
-                    # Timeline column
-                    pdf.set_xy(x_pos + action_col_widths[0] + action_col_widths[1], y_pos)
-                    pdf.rect(x_pos + action_col_widths[0] + action_col_widths[1], y_pos, action_col_widths[2], row_height, 'D')
-                    pdf.set_xy(x_pos + action_col_widths[0] + action_col_widths[1] + 1, y_pos + 1)
-                    pdf.multi_cell(action_col_widths[2] - 2, 3.5, date_timeline)
-                    
-                    # Move to next row
-                    pdf.set_xy(x_pos, y_pos + row_height)
-                pdf.ln(8)
-            
-            # Signatures
-            pdf.set_font(font_family, 'B', size=11)
-            pdf.cell(0, 8, txt="Signatures:", ln=True)
-            pdf.set_font(font_family, 'I', size=10)
-            pdf.cell(0, 6, txt="Agreed and acknowledged by the members present:", ln=True)
-            pdf.ln(3)
-            
-            pdf.set_font(font_family, size=10)
-            sig_count = 0
-            for name, role in zip(attendees_names, attendees_roles):
-                if name.strip():
-                    sig_count += 1
-            
-            sig_per_row = 2
-            sig_x_start = 15
-            sig_width = 90
-            sig_y = pdf.get_y()
-            
-            for idx, (name, role) in enumerate(zip(attendees_names, attendees_roles)):
-                if name.strip():
-                    col_idx = idx % sig_per_row
-                    if col_idx == 0 and idx > 0:
-                        sig_y += 25
-                    
-                    x_pos = sig_x_start + (col_idx * sig_width)
-                    pdf.set_xy(x_pos, sig_y)
-                    pdf.cell(sig_width, 2, "_" * 30, border=0, align='C')
-                    pdf.set_xy(x_pos, sig_y + 3)
-                    pdf.cell(sig_width, 5, name, border=0, align='C')
-                    pdf.set_xy(x_pos, sig_y + 7)
-                    pdf.cell(sig_width, 4, role, border=0, align='C')
-            
-            filename = os.path.join(app.config['UPLOAD_FOLDER'], 'mom.pdf')
-            pdf.output(filename)
-            return send_file(filename, as_attachment=True, download_name='mom.pdf')
-
     return render_template('index.html')
+
+
+@app.route('/api/export/word', methods=['POST'])
+def export_word():
+    payload = request.get_json(silent=True) or {}
+    date = payload.get('date', '')
+    time = payload.get('time', '')
+    file_buffer = build_word_bytes(
+        date,
+        time,
+        payload.get('subject', ''),
+        payload.get('attendees', []),
+        payload.get('points', ''),
+        payload.get('action_items', []),
+    )
+    filename = build_export_filename(date, time, 'docx')
+    return send_file(
+        file_buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+
+
+@app.route('/api/export/pdf', methods=['POST'])
+def export_pdf():
+    payload = request.get_json(silent=True) or {}
+    date = payload.get('date', '')
+    time = payload.get('time', '')
+    file_buffer = build_pdf_bytes(
+        date,
+        time,
+        payload.get('subject', ''),
+        payload.get('attendees', []),
+        payload.get('points', ''),
+        payload.get('action_items', []),
+    )
+    filename = build_export_filename(date, time, 'pdf')
+    return send_file(
+        file_buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/pdf',
+    )
+
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({'ok': True})
+
 
 if __name__ == '__main__':
     app.run(debug=True)

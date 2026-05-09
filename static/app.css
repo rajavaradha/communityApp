@@ -1,0 +1,144 @@
+body {
+    margin: 0;
+    background: #e6f3ea;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 10pt;
+    color: #173a2e;
+}
+
+.page {
+    max-width: 1080px;
+    margin: 16px auto;
+    padding: 14px;
+    border: 1px solid #b8d8c4;
+    border-radius: 12px;
+    background: #f9fffb;
+}
+
+h1 {
+    margin: 0 0 4px;
+    font-size: 13pt;
+    font-weight: 700;
+}
+
+.subtitle {
+    margin: 0 0 10px;
+    color: #3f6e5a;
+}
+
+.panel {
+    border: 1px solid #cfe5d6;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 10px;
+    margin: 8px 0;
+}
+
+.panel h2 {
+    margin: 0 0 8px;
+    font-size: 13pt;
+    font-weight: 700;
+    color: #184032;
+}
+
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+input,
+textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #b7d5c2;
+    border-radius: 8px;
+    padding: 7px 9px;
+    background: #ffffff;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 10pt;
+}
+
+.section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+button {
+    border: 1px solid #4c9968;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #63b17f 0%, #4b9868 100%);
+    color: #f8fff9;
+    cursor: pointer;
+    font-family: Verdana, Arial, sans-serif;
+    font-size: 10pt;
+}
+
+.dual-line {
+    min-width: 142px;
+    padding: 6px 10px;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+}
+
+.dual-line .line1 {
+    font-size: 10pt;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.dual-line .line2 {
+    font-size: 8pt;
+    font-weight: 700;
+    line-height: 1.1;
+    color: #4da3ff;
+}
+
+.download {
+    background: #2f6f4e;
+    border-color: #2f6f4e;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    border: 1px solid #d6e6dc;
+    padding: 7px;
+    text-align: left;
+    vertical-align: middle;
+}
+
+th {
+    background: #eef7f1;
+    font-weight: 700;
+}
+
+.remove-btn {
+    background: #fff3f3;
+    border: 1px solid #d99;
+    color: #a33;
+    padding: 4px 8px;
+    min-width: auto;
+}

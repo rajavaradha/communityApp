@@ -1,6 +1,7 @@
 import io
 import os
 from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
 from docx import Document
@@ -17,7 +18,7 @@ def format_date_for_export(date_str):
         return date_str
 
 
-def create_word_bytes(date, time, attendees, points, action_items):
+def create_word_bytes(date, time, attendees, points, action_items, meeting_heading=''):
     doc = Document()
 
     normal_style = doc.styles['Normal']
@@ -34,6 +35,14 @@ def create_word_bytes(date, time, attendees, points, action_items):
     title_run.font.name = 'Verdana'
     title_run.font.size = Pt(11)
     title_run.font.bold = True
+
+    mh = meeting_heading.strip() if meeting_heading else ''
+    if mh:
+        heading_para = doc.add_paragraph()
+        heading_run = heading_para.add_run(mh)
+        heading_run.font.name = 'Verdana'
+        heading_run.font.size = Pt(11)
+        heading_run.font.bold = True
 
     doc.add_paragraph(f'Date: {format_date_for_export(date)}')
     doc.add_paragraph(f'Time: {time}')
@@ -110,7 +119,7 @@ def create_word_bytes(date, time, attendees, points, action_items):
     return buffer.getvalue()
 
 
-def create_pdf_bytes(date, time, attendees, points, action_items):
+def create_pdf_bytes(date, time, attendees, points, action_items, meeting_heading=''):
     pdf = FPDF()
     font_family = 'Arial'
 
@@ -133,7 +142,13 @@ def create_pdf_bytes(date, time, attendees, points, action_items):
     pdf.set_font(font_family, 'B', 11)
     pdf.cell(0, 10, txt='Minutes of Meeting', ln=True, align='C')
     pdf.set_font(font_family, '', 10)
-    pdf.ln(5)
+    pdf.ln(3)
+    mh = meeting_heading.strip() if meeting_heading else ''
+    if mh:
+        pdf.set_font(font_family, 'B', 11)
+        pdf.multi_cell(0, 6, mh, align='C')
+        pdf.ln(2)
+    pdf.set_font(font_family, '', 10)
     pdf.cell(0, 8, txt=f'Date: {format_date_for_export(date)}', ln=True)
     pdf.cell(0, 8, txt=f'Time: {time}', ln=True)
     pdf.ln(5)
@@ -234,6 +249,8 @@ def create_pdf_bytes(date, time, attendees, points, action_items):
 
 
 def ensure_state():
+    if 'meeting_heading' not in st.session_state:
+        st.session_state.meeting_heading = ''
     if 'attendees' not in st.session_state:
         st.session_state.attendees = [{'id': 1, 'name': '', 'role': ''}]
     if 'actions' not in st.session_state:
@@ -262,70 +279,15 @@ def remove_action(action_id):
     st.session_state.actions = [a for a in st.session_state.actions if a['id'] != action_id]
 
 
+def load_css():
+    css_path = Path(__file__).parent / 'styles' / 'app.css'
+    if css_path.exists():
+        st.markdown(f'<style>{css_path.read_text(encoding="utf-8")}</style>', unsafe_allow_html=True)
+
+
 def main():
     st.set_page_config(page_title='MOM Creator', layout='wide', initial_sidebar_state='collapsed')
-    
-    # Custom CSS for styling
-    st.markdown("""
-    <style>
-        .stApp {
-            background: #f6f8fb;
-        }
-        .main .block-container {
-            max-width: 1080px;
-            padding-top: 1.25rem;
-            padding-bottom: 2rem;
-        }
-        .main h1 {
-            color: #1f3a5f;
-            font-weight: 700;
-            margin-bottom: 0.25rem;
-        }
-        .main h2 {
-            color: #1f3a5f;
-            font-weight: 650;
-            margin-top: 1.5rem;
-            margin-bottom: 0.75rem;
-        }
-        .card {
-            background: #ffffff;
-            border: 1px solid #d9e1ec;
-            border-radius: 12px;
-            padding: 14px 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-        }
-        .row-header {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #52627a;
-            margin: 0.15rem 0 0.35rem;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
-        }
-        .stTextInput [data-baseweb="input"] input,
-        .stTextArea textarea {
-            border: 1px solid #c7d2e3 !important;
-            border-radius: 10px !important;
-            background-color: #ffffff !important;
-        }
-        .stButton > button {
-            border-radius: 10px;
-            border: 1px solid #1f6feb;
-            background: #1f6feb;
-            color: white;
-            font-weight: 600;
-        }
-        .stButton > button:hover {
-            background: #1a5fd1;
-            border-color: #1a5fd1;
-        }
-        .stDownloadButton > button {
-            border-radius: 10px;
-            font-weight: 600;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    load_css()
     
     st.title('Minutes of Meeting (MOM) Creator')
     st.caption('Create professional MOM documents in Word and PDF format.')
@@ -333,135 +295,197 @@ def main():
     ensure_state()
 
     with st.expander('📅 Meeting Details', expanded=True):
+        st.text_input(
+            'Meeting Heading',
+            key='meeting_heading',
+            placeholder='Subject or title shown on exported documents',
+            help='Printed below “Minutes of Meeting” in Word and PDF.',
+        )
         cols = st.columns(2)
         with cols[0]:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            date = st.date_input('Meeting Date', help='Select the date of the meeting')
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                date = st.date_input('Meeting Date', help='Select the date of the meeting')
         with cols[1]:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            time_value = st.time_input('Meeting Time', help='Select meeting start time')
-            time = time_value.strftime('%I:%M %p')
-            st.markdown('</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                time_value = st.time_input('Meeting Time', help='Select meeting start time')
+                time = time_value.strftime('%I:%M %p')
 
-    st.markdown('## Attendees')
+    st.markdown(
+        '<h2 class="section-heading-18">Attendees</h2>',
+        unsafe_allow_html=True,
+    )
     
-    col1, col2, _ = st.columns([1, 1, 2])
-    with col1:
-        if st.button('Add Attendee', key='add_attendee_btn'):
+    b1, b2, _ = st.columns([2, 2, 6], gap='small')
+    with b1:
+        if st.button(
+            'BTN_ADD_ATTENDEE',
+            key='add_attendee_btn',
+            use_container_width=True,
+            help='Add a row (Ctrl+Shift+1)',
+        ):
             add_attendee()
-    with col2:
-        if st.button('Reset Attendees', key='reset_attendee_btn'):
+    with b2:
+        if st.button(
+            'BTN_RESET_ATTENDEE',
+            key='reset_attendee_btn',
+            use_container_width=True,
+            help='Clear attendee list (Ctrl+Shift+2)',
+        ):
             st.session_state.attendees = [{'id': 1, 'name': '', 'role': ''}]
             st.session_state.attendee_counter = 2
             st.rerun()
+
+    with st.container(border=True):
+        header_cols = st.columns([4, 4, 1])
+        header_cols[0].markdown('<div class="row-header">Name</div>', unsafe_allow_html=True)
+        header_cols[1].markdown('<div class="row-header">Role / Designation</div>', unsafe_allow_html=True)
+        header_cols[2].markdown('<div class="row-header">Remove</div>', unsafe_allow_html=True)
+
+        for idx, attendee in enumerate(st.session_state.attendees, 1):
+            cols = st.columns([4, 4, 1])
+            attendee['name'] = cols[0].text_input(
+                f'Attendee Name {idx}',
+                value=attendee['name'],
+                key=f"attendee_name_{attendee['id']}",
+                placeholder='Enter full name',
+                label_visibility='collapsed'
+            )
+            attendee['role'] = cols[1].text_input(
+                f'Attendee Role {idx}',
+                value=attendee['role'],
+                key=f"attendee_role_{attendee['id']}",
+                placeholder='Enter role/designation',
+                label_visibility='collapsed'
+            )
+            if cols[2].button('X', key=f"remove_attendee_{attendee['id']}"):
+                remove_attendee(attendee['id'])
+                st.rerun()
+
+    st.markdown(
+        '<h2 class="section-heading-18">Points Discussed</h2>',
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True):
+        points = st.text_area('Enter points discussed', height=200, placeholder='Type or paste the points discussed during the meeting...')
+
+    st.markdown(
+        '<h2 class="section-heading-18">Action Items</h2>',
+        unsafe_allow_html=True,
+    )
     
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    header_cols = st.columns([4, 4, 1])
-    header_cols[0].markdown('<div class="row-header">Name</div>', unsafe_allow_html=True)
-    header_cols[1].markdown('<div class="row-header">Role / Designation</div>', unsafe_allow_html=True)
-    header_cols[2].markdown('<div class="row-header">Remove</div>', unsafe_allow_html=True)
-
-    for idx, attendee in enumerate(st.session_state.attendees, 1):
-        cols = st.columns([4, 4, 1])
-        attendee['name'] = cols[0].text_input(
-            f'Attendee Name {idx}',
-            value=attendee['name'],
-            key=f"attendee_name_{attendee['id']}",
-            placeholder='Enter full name',
-            label_visibility='collapsed'
-        )
-        attendee['role'] = cols[1].text_input(
-            f'Attendee Role {idx}',
-            value=attendee['role'],
-            key=f"attendee_role_{attendee['id']}",
-            placeholder='Enter role/designation',
-            label_visibility='collapsed'
-        )
-        if cols[2].button('X', key=f"remove_attendee_{attendee['id']}"):
-            remove_attendee(attendee['id'])
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('## Points Discussed')
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    points = st.text_area('Enter points discussed', height=200, placeholder='Type or paste the points discussed during the meeting...')
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('## Action Items')
-    
-    col1, col2, _ = st.columns([1, 1, 2])
-    with col1:
-        if st.button('Add Action Item', key='add_action_btn'):
+    a1, a2, _ = st.columns([2, 2, 6], gap='small')
+    with a1:
+        if st.button(
+            'BTN_ADD_ACTION',
+            key='add_action_btn',
+            use_container_width=True,
+            help='Add an action row (Ctrl+Shift+3)',
+        ):
             add_action()
-    with col2:
-        if st.button('Reset Action Items', key='reset_action_btn'):
+    with a2:
+        if st.button(
+            'BTN_RESET_ACTION',
+            key='reset_action_btn',
+            use_container_width=True,
+            help='Clear action items (Ctrl+Shift+4)',
+        ):
             st.session_state.actions = [{'id': 1, 'desc': '', 'resp': '', 'date': ''}]
             st.session_state.action_counter = 2
             st.rerun()
     
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    action_header_cols = st.columns([5, 4, 3, 1])
-    action_header_cols[0].markdown('<div class="row-header">Action Item</div>', unsafe_allow_html=True)
-    action_header_cols[1].markdown('<div class="row-header">Responsibility</div>', unsafe_allow_html=True)
-    action_header_cols[2].markdown('<div class="row-header">Timeline</div>', unsafe_allow_html=True)
-    action_header_cols[3].markdown('<div class="row-header">Remove</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        action_header_cols = st.columns([5, 4, 3, 1])
+        action_header_cols[0].markdown('<div class="row-header">Action Item</div>', unsafe_allow_html=True)
+        action_header_cols[1].markdown('<div class="row-header">Responsibility</div>', unsafe_allow_html=True)
+        action_header_cols[2].markdown('<div class="row-header">Timeline</div>', unsafe_allow_html=True)
+        action_header_cols[3].markdown('<div class="row-header">Remove</div>', unsafe_allow_html=True)
 
-    for idx, action in enumerate(st.session_state.actions, 1):
-        cols = st.columns([5, 4, 3, 1])
-        action['desc'] = cols[0].text_input(
-            f'Action Item Description {idx}',
-            value=action['desc'],
-            key=f"action_desc_{action['id']}",
-            placeholder='What needs to be done?',
-            label_visibility='collapsed'
-        )
-        action['resp'] = cols[1].text_input(
-            f'Action Item Owner {idx}',
-            value=action['resp'],
-            key=f"action_resp_{action['id']}",
-            placeholder='Who is responsible?',
-            label_visibility='collapsed'
-        )
-        action['date'] = cols[2].text_input(
-            f'Action Item Timeline {idx}',
-            value=action['date'],
-            key=f"action_date_{action['id']}",
-            placeholder='When is it due?',
-            label_visibility='collapsed'
-        )
-        if cols[3].button('X', key=f"remove_action_{action['id']}"):
-            remove_action(action['id'])
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        for idx, action in enumerate(st.session_state.actions, 1):
+            cols = st.columns([5, 4, 3, 1])
+            action['desc'] = cols[0].text_input(
+                f'Action Item Description {idx}',
+                value=action['desc'],
+                key=f"action_desc_{action['id']}",
+                placeholder='What needs to be done?',
+                label_visibility='collapsed'
+            )
+            action['resp'] = cols[1].text_input(
+                f'Action Item Owner {idx}',
+                value=action['resp'],
+                key=f"action_resp_{action['id']}",
+                placeholder='Who is responsible?',
+                label_visibility='collapsed'
+            )
+            action['date'] = cols[2].text_input(
+                f'Action Item Timeline {idx}',
+                value=action['date'],
+                key=f"action_date_{action['id']}",
+                placeholder='When is it due?',
+                label_visibility='collapsed'
+            )
+            if cols[3].button('X', key=f"remove_action_{action['id']}"):
+                remove_action(action['id'])
+                st.rerun()
 
     attendees = [a for a in st.session_state.attendees if a['name'].strip()]
     action_items = [a for a in st.session_state.actions if a['desc'].strip()]
 
-    st.markdown('## Download Documents')
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        word_bytes = create_word_bytes(date.isoformat(), time, attendees, points, action_items)
-        st.download_button(
-            'Download as Word (.docx)',
-            word_bytes,
-            file_name='minutes_of_meeting.docx',
-            mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    st.markdown(
+        '<h2 class="section-heading-18">Download Documents</h2>',
+        unsafe_allow_html=True,
+    )
+    with st.container(border=True):
+        # Two narrow cols + spacer so buttons sit side-by-side; wide col eats flex space only on the right
+        dl1, dl2, _ = st.columns([2, 2, 6], gap='small')
+        with dl1:
+            word_bytes = create_word_bytes(
+                date.isoformat(),
+                time,
+                attendees,
+                points,
+                action_items,
+                meeting_heading=st.session_state.get('meeting_heading', ''),
+            )
+            st.download_button(
+                'BTN_DOWNLOAD_WORD',
+                word_bytes,
+                file_name='minutes_of_meeting.docx',
+                mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                help='Download Word (Ctrl+Shift+W)',
+                key='download_word',
+                use_container_width=True,
+            )
+        with dl2:
+            pdf_bytes = create_pdf_bytes(
+                date.isoformat(),
+                time,
+                attendees,
+                points,
+                action_items,
+                meeting_heading=st.session_state.get('meeting_heading', ''),
+            )
+            st.download_button(
+                'BTN_DOWNLOAD_PDF',
+                pdf_bytes,
+                file_name='minutes_of_meeting.pdf',
+                mime='application/pdf',
+                help='Download PDF (Ctrl+Shift+P)',
+                key='download_pdf',
+                use_container_width=True,
+            )
+    with st.expander('Keyboard shortcuts', expanded=False):
+        st.markdown(
+            """
+| Control | Shortcut |
+|---------|----------|
+| Add attendee row | Ctrl+Shift+1 |
+| Reset attendees | Ctrl+Shift+2 |
+| Add action row | Ctrl+Shift+3 |
+| Reset action items | Ctrl+Shift+4 |
+| Download Word | Ctrl+Shift+W |
+| Download PDF | Ctrl+Shift+P |
+"""
         )
-
-    with col2:
-        pdf_bytes = create_pdf_bytes(date.isoformat(), time, attendees, points, action_items)
-        st.download_button(
-            'Download as PDF',
-            pdf_bytes,
-            file_name='minutes_of_meeting.pdf',
-            mime='application/pdf'
-        )
-    
-    st.markdown('</div>', unsafe_allow_html=True)
     st.info('Tip: For Streamlit Community Cloud deployment, set `streamlit_app.py` as the main file.')
 
 

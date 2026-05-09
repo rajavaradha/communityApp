@@ -24,12 +24,17 @@ A web-based application for creating Minutes of Meeting (MOM).
 
 ## Usage
 
-Run the Streamlit app:
+Run the Flask website (React UI + API):
 ```
-streamlit run streamlit_app.py
+python app.py
 ```
 
-Open the local Streamlit URL shown in the terminal.
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000).
+
+Optional: production-style local run:
+```
+gunicorn app:app --bind 127.0.0.1:5000
+```
 
 - Fill in Meeting Date and Time.
 - Add Attendees using the grid and remove rows as needed.
@@ -37,37 +42,41 @@ Open the local Streamlit URL shown in the terminal.
 - Add Action Items using the action grid.
 - Export to Word or PDF using the download buttons.
 
-## Deploy as a Website
+## Deploy as a website
 
-### Option 1: Streamlit Community Cloud (fastest)
+This app is **Flask** (`app.py`) serving the React + Tailwind UI and `/api/export/*` endpoints. Do **not** deploy with Streamlit Cloud for this UI.
 
-1. Push this project to a GitHub repository.
-2. Go to [https://share.streamlit.io/](https://share.streamlit.io/) and sign in.
-3. Click **New app** and select:
-   - Repository: your repo
-   - Branch: `main` (or your branch)
-   - Main file path: `streamlit_app.py`
-4. Click **Deploy**.
+### Render (recommended; blueprint included)
 
-Your app will get a public URL like:
-`https://<your-app-name>.streamlit.app`
+1. Push the repo to GitHub.
+2. In [Render](https://render.com): **New +** → **Blueprint**.
+3. Connect the repo; Render reads `render.yaml`.
+4. Deploy. It runs: `gunicorn app:app --bind 0.0.0.0:$PORT`.
 
-### Option 2: Render
+Your service URL will look like `https://mom-creator.onrender.com` (name may vary).
 
-This repo includes `render.yaml` for blueprint deployment.
+### Railway / Fly.io / PythonAnywhere
 
-1. Push this project to GitHub.
-2. In Render, choose **New +** -> **Blueprint**.
-3. Select your repository and deploy.
-4. Render will automatically:
-   - install `requirements.txt`
-   - run `streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0`
+Same idea: **Python web service**, install `requirements.txt`, start with:
 
-### Local verify before deploying
+```bash
+gunicorn app:app --bind 0.0.0.0:$PORT
+```
+
+Use the platform’s **PORT** env var / binding docs.
+
+### Checklist before go-live
+
+- [ ] Repo includes `requirements.txt` (includes `flask`, `gunicorn`, `python-docx`, `fpdf`).
+- [ ] **`uploads/`** is not required for current exports (in-memory response); no persistent disk needed unless you add file storage later.
+- [ ] PDF uses Verdana on Windows paths in code; on Linux hosts it **falls back to Arial** (already handled in `app.py`).
+- [ ] Custom domain: add in host DNS (CNAME) + enable HTTPS in the host dashboard.
+
+### Local production-style check
 
 ```bash
 pip install -r requirements.txt
-streamlit run streamlit_app.py
+gunicorn app:app --bind 127.0.0.1:5000
 ```
 
-If you want to keep the previous Flask app as a legacy version, `app.py` remains in the repo but is no longer the main website entry point.
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000) and test Word/PDF export.
