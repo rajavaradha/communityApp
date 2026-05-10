@@ -1,6 +1,29 @@
 const emptyAttendee = () => ({ name: "", role: "" });
 const emptyAction = () => ({ desc: "", resp: "", date: "" });
 
+/** Suggested office posts (role); user may type any text. */
+const ATTENDEE_POST_OPTIONS = [
+  "President",
+  "Vice President",
+  "Secretary",
+  "Joint Secretary",
+  "Treasurer",
+  "Joint Treasurer",
+  "EC Member",
+];
+
+/** Suggested member names; user may type any text. */
+const MEMBER_NAME_PRESETS = [
+  "Mr. Ravichandran",
+  "Mr. Varadharajan",
+  "Mr. Kirubaharan",
+  "Mr. Balakrishnan K",
+  "Mr. Shivkumar",
+  "Mr. Rahamathullah",
+  "Mr. Suresh",
+  "Mr. Shahul Hameed Meeran",
+];
+
 function DualButton({ label, shortcut, onClick, color = "emerald", type = "button" }) {
   const palette =
     color === "emerald"
@@ -149,8 +172,18 @@ function App() {
 
   return (
     <main className="mx-auto my-4 max-w-6xl rounded-xl border border-emerald-200 bg-white/90 p-4 shadow-sm">
-      <h1 className="mb-1 font-verdana text-[18pt] font-bold text-emerald-900">Minutes of Meeting (MOM) Creator</h1>
-      <p className="mb-3 text-[10pt] text-emerald-700">React + Tailwind website UI</p>
+      <datalist id="mom-attendee-names">
+        {MEMBER_NAME_PRESETS.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
+      <datalist id="mom-attendee-roles">
+        {ATTENDEE_POST_OPTIONS.map((p) => (
+          <option key={p} value={p} />
+        ))}
+      </datalist>
+
+      <h1 className="mb-3 font-verdana text-[18pt] font-bold text-emerald-900">Minutes of Meeting (MOM) Creator</h1>
 
       <section className="mb-2 rounded-lg border border-emerald-200 bg-white p-3">
         <h2 className="mb-2 text-[11pt] font-bold">Meeting Details</h2>
@@ -176,9 +209,12 @@ function App() {
       </section>
 
       <section className="mb-2 rounded-lg border border-emerald-200 bg-white p-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 className="text-[11pt] font-bold">Attendees</h2>
-          <div className="flex gap-[5px]">
+        <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-[11pt] font-bold">Attendees</h2>
+            <p className="text-[9pt] text-emerald-700">Name and role: choose a suggestion or type your own.</p>
+          </div>
+          <div className="flex shrink-0 gap-[5px]">
             <DualButton label="Add" shortcut="Alt + Shift + 1" onClick={addAttendee} />
             <DualButton label="Reset" shortcut="Alt + Shift + 2" onClick={resetAttendees} />
           </div>
@@ -197,10 +233,24 @@ function App() {
               <tr key={`att-${idx}`}>
                 <td className="border border-emerald-100 p-1.5">{idx + 1}</td>
                 <td className="border border-emerald-100 p-1.5">
-                  <input className="w-full rounded border border-emerald-300 px-2 py-1" value={row.name} onChange={(e) => updateAttendee(idx, "name", e.target.value)} />
+                  <input
+                    className="w-full rounded border border-emerald-300 px-2 py-1 text-[10pt]"
+                    list="mom-attendee-names"
+                    autoComplete="off"
+                    placeholder="Member name — pick or type"
+                    value={row.name}
+                    onChange={(e) => updateAttendee(idx, "name", e.target.value)}
+                  />
                 </td>
                 <td className="border border-emerald-100 p-1.5">
-                  <input className="w-full rounded border border-emerald-300 px-2 py-1" value={row.role} onChange={(e) => updateAttendee(idx, "role", e.target.value)} />
+                  <input
+                    className="w-full rounded border border-emerald-300 px-2 py-1 text-[10pt]"
+                    list="mom-attendee-roles"
+                    autoComplete="off"
+                    placeholder="Post / role — pick or type"
+                    value={row.role}
+                    onChange={(e) => updateAttendee(idx, "role", e.target.value)}
+                  />
                 </td>
                 <td className="border border-emerald-100 p-1.5">
                   <button className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-700" onClick={() => removeAttendee(idx)} type="button">
